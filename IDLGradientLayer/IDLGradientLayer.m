@@ -11,14 +11,39 @@
 
 #import <UIKit/UIKit.h>
 
+typedef struct
+{
+    CGFloat r;
+    CGFloat g;
+    CGFloat b;
+    CGFloat a;
+} IDLGradientLayerColorComponents;
+
+NS_INLINE NSString *NSStringFromIDLGradientLayerColorComponents(IDLGradientLayerColorComponents components)
+{
+    return [NSString stringWithFormat:@"{r:%f,g:%f,b:%f,a:%f}",components.r,components.g,components.b,components.a];
+}
+
+typedef struct
+{
+    CGFloat start;
+    CGFloat finish;
+} IDLGradientLayerSegmentLookup;
+
+NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSegmentLookup lookup)
+{
+    return [NSString stringWithFormat:@"{s:%f,f:%f}",lookup.start,lookup.finish];
+}
+
 @interface IDLGradientLayerSegment : NSObject
 
 @property CGColorRef startColorRef;
 @property CGColorRef finishColorRef;
 @property CGFloat startAngle;
 @property CGFloat finishAngle;
-@property CGFloat subdivisionCount;
-@property CGFloat subdivisionWidth;
+
+@property IDLGradientLayerColorComponents startColorComponents;
+@property IDLGradientLayerColorComponents finishColorComponents;
 
 @property BOOL interpolateColors;
 
@@ -30,7 +55,7 @@
 
 -(NSString *)description
 {
-    return [NSString stringWithFormat:@"Segment(%li)[start:%f, finish:%f, subd:(%f:%f), i:%i]",self.index,self.startAngle,self.finishAngle,self.subdivisionCount,self.subdivisionWidth, self.interpolateColors];
+    return [NSString stringWithFormat:@"Segment(%li)[start:%f, finish:%f, i:%i (%@ -> %@)]",self.index,self.startAngle,self.finishAngle, self.interpolateColors, NSStringFromIDLGradientLayerColorComponents(self.startColorComponents), NSStringFromIDLGradientLayerColorComponents(self.finishColorComponents)];
 }
 
 @end
@@ -73,16 +98,17 @@
     return YES;
 }
 
-- (void)drawInContext:(CGContextRef)gc
+- (void)drawInContext:(CGContextRef)context
 {
-    [self moveOriginToCenterInContext:gc];
-    [self drawGradientInContext:gc];
+    NSLog(@"frame: %@",NSStringFromCGRect(CGContextGetClipBoundingBox(context)));
+    [self moveOriginToCenterInContext:context];
+    [self drawGradientInContext:context];
 }
 
-- (void)moveOriginToCenterInContext:(CGContextRef)gc
+- (void)moveOriginToCenterInContext:(CGContextRef)context
 {
     CGRect bounds = self.bounds;
-    CGContextTranslateCTM(gc, CGRectGetMidX(bounds), CGRectGetMidY(bounds));
+    CGContextTranslateCTM(context, CGRectGetMidX(bounds), CGRectGetMidY(bounds));
 }
 
 - (NSArray *)buildSegments
@@ -108,6 +134,8 @@
             }
             NSInteger nextIndex = i + 1;
             nextColor = (__bridge CGColorRef)[colors objectAtIndex:MIN(nextIndex, total-1)];
+            
+            //NSLog(@"i:%i, ni:%i",i,nextIndex);
             
             if (nextIndex >= total) {
                 nextLocation = 1.0f;
@@ -145,72 +173,98 @@
                            color:(CGColorRef)color
                            nextColor:(CGColorRef)nextColor
 {
-    IDLGradientLayerSegment *segment = [IDLGradientLayerSegment new];
-    segment.index = index;
-    segment.startAngle = location * M_PI * 2.0f + _rotation;
-    segment.finishAngle = nextLocation * M_PI * 2.0f + _rotation;
-    segment.startColorRef = color;
-    segment.finishColorRef = nextColor;
+    BOOL colorsMatch =CGColorEqualToColor(color, nextColor);
     
-    CGFloat subdivisionCount = ceil((segment.finishAngle - segment.startAngle)/kLevelOfDetail);
-    segment.subdivisionWidth = (segment.finishAngle - segment.startAngle)/subdivisionCount;
-    segment.subdivisionCount = subdivisionCount;
+    IDLGradientLayerSegment *segment = nil;
     
-    if (!CGColorEqualToColor(color, nextColor)) {
-        segment.interpolateColors = CGColorSpaceGetModel(CGColorGetColorSpace(color)) == CGColorSpaceGetModel(CGColorGetColorSpace(nextColor));
-    } else {
-        segment.interpolateColors = NO;
+    if (!colorsMatch || location != nextLocation) {
+        
+        segment = [IDLGradientLayerSegment new];
+        segment.index = index;
+        segment.startAngle = location * M_PI * 2.0f + _rotation;
+        segment.finishAngle = nextLocation * M_PI * 2.0f + _rotation;
+        segment.startColorRef = color;
+        segment.finishColorRef = nextColor;
+        
+        
+        //NSLog(@"index:%i - s:%f, f:%f", (int)index,location,nextLocation);
+        
+        segment.interpolateColors = !colorsMatch;
+        
+        segment.startColorComponents = [self getComponentsFromColorRef:color];
+        segment.finishColorComponents = [self getComponentsFromColorRef:nextColor];
+        
+        //NSLog(@"number of components: %i", (int)CGColorGetNumberOfComponents(color));
     }
-    
     return segment;
 }
 
--(void)drawSliverInContext:(CGContextRef)gc start:(CGFloat)start finish:(CGFloat)finish radius:(CGFloat)radius center:(CGPoint)center colorRef:(CGColorRef)colorRef
+- (IDLGradientLayerColorComponents)getComponentsFromColorRef:(CGColorRef)colorRef
 {
-    CGFloat startPointX = cos(start) * radius + center.x;
-    CGFloat startPointY = sin(start) * radius + center.y;
+    NSUInteger numberOfComponents = CGColorGetNumberOfComponents(colorRef);
+    CGFloat *colorRefComponents = (CGFloat *)CGColorGetComponents(colorRef);
     
-    CGFloat finishPointX = cos(finish) * radius + center.x;
-    CGFloat finishPointY = sin(finish) * radius + center.y;
+    IDLGradientLayerColorComponents components;
     
-    CGContextBeginPath(gc);
-    
-    CGContextMoveToPoint(gc, center.x, center.y);
-    CGContextAddLineToPoint(gc, startPointX, startPointY);
-    CGContextAddLineToPoint(gc, finishPointX, finishPointY);
-    CGContextAddLineToPoint(gc, center.x, center.y);
-    
-    //CGContextAddLineToPoint(gc, 25.0f, 25.0f);
-    
-    CGContextSetFillColorWithColor(gc, colorRef);
-    
-    CGContextFillPath(gc);
+    if (numberOfComponents == 4) {
+        components = (IDLGradientLayerColorComponents){
+            colorRefComponents[0],
+            colorRefComponents[1],
+            colorRefComponents[2],
+            colorRefComponents[3]};
+    } else if (numberOfComponents == 2) {
+        components = (IDLGradientLayerColorComponents){
+            colorRefComponents[0],
+            colorRefComponents[0],
+            colorRefComponents[0],
+            colorRefComponents[1]};
+    } else {
+        components = (IDLGradientLayerColorComponents){
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f};
+    }
+    return components;
 }
 
-- (void)drawGradientInContext:(CGContextRef)gc
+- (void)drawGradientInContext:(CGContextRef)context
 {
     
     NSArray *segments = [self buildSegments];
     
+    NSUInteger segmentCount = segments.count;
+    
     NSLog(@"segments: \n%@",segments);
     
+    if (segmentCount == 0) return;
     
-    if (segments.count == 0) return;
+    IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
+    IDLGradientLayerSegment *segment;
+    for (NSInteger i = 0; i < segmentCount; i++) {
+        segment = [segments objectAtIndex:i];
+        segmentLookup[i] = (IDLGradientLayerSegmentLookup){segment.startAngle, segment.finishAngle};
+        NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
+    }
     
     NSInteger counter = 0;
     
     CGPoint center = CGPointZero;
     CGFloat radius = 100.0f;
     
-    CGContextClearRect(gc, self.bounds);
-    CGContextSetInterpolationQuality(gc, kCGInterpolationHigh);
-    CGContextSetBlendMode(gc, kCGBlendModeLighten);
-    
-    CGFloat sliverStart, sliverFinish, sliverWidth;
+    CGContextClearRect(context, self.bounds);
     
     BOOL interpolate;
     
     NSUInteger componentsCount;
+    
+    
+    CGRect contextFrame = CGContextGetClipBoundingBox(context);
+    
+    NSLog(@"frame: %@",NSStringFromCGRect(contextFrame));
+    
+    
+    /*
     
     CGColorRef colorRef = nil;
     
@@ -274,7 +328,7 @@
     }
     
     NSLog(@"sliver count: %li",counter);
-    
+    */
 }
 
 @end

@@ -29,16 +29,19 @@
 {
     [super viewDidAppear:animated];
     
-    [self drawSweep];
+    [self drawGradient];
 }
 
--(void)drawSweep
+-(void)drawGradient
 {
     IDLGradientLayer *layer = [IDLGradientLayer layer];
     layer.frame = self.view.bounds;
     layer.rotation = 0.0f;
     layer.colors = @[
                      (__bridge NSObject *)[UIColor redColor].CGColor,
+                     (__bridge NSObject *)[UIColor whiteColor].CGColor,
+                     (__bridge NSObject *)[UIColor blackColor].CGColor,
+                     (__bridge NSObject *)[UIColor colorWithWhite:0.5f alpha:1.0f].CGColor,
                      (__bridge NSObject *)[UIColor yellowColor].CGColor,
                      (__bridge NSObject *)[UIColor greenColor].CGColor,
                      (__bridge NSObject *)[UIColor blueColor].CGColor];
