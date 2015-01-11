@@ -44,6 +44,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 
 @property IDLGradientLayerColorComponents startColorComponents;
 @property IDLGradientLayerColorComponents finishColorComponents;
+@property IDLGradientLayerSegmentLookup lookup;
 
 @property BOOL interpolateColors;
 
@@ -193,6 +194,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
         
         segment.startColorComponents = [self getComponentsFromColorRef:color];
         segment.finishColorComponents = [self getComponentsFromColorRef:nextColor];
+        segment.lookup = (IDLGradientLayerSegmentLookup){segment.startAngle, segment.finishAngle};
         
         //NSLog(@"number of components: %i", (int)CGColorGetNumberOfComponents(color));
     }
@@ -239,18 +241,9 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     
     if (segmentCount == 0) return;
     
-    IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
-    IDLGradientLayerSegment *segment;
-    for (NSInteger i = 0; i < segmentCount; i++) {
-        segment = [segments objectAtIndex:i];
-        segmentLookup[i] = (IDLGradientLayerSegmentLookup){segment.startAngle, segment.finishAngle};
-        NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
-    }
-    
     NSInteger counter = 0;
     
     CGPoint center = CGPointZero;
-    CGFloat radius = 100.0f;
     
     CGContextClearRect(context, self.bounds);
     
@@ -264,71 +257,23 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     NSLog(@"frame: %@",NSStringFromCGRect(contextFrame));
     
     
-    /*
+    int dim = contextFrame.size.width * contextFrame.size.height;
+    CFMutableDataRef bitmapData = CFDataCreateMutable(NULL, 0);
+    CFDataSetLength(bitmapData, dim * 4);
     
-    CGColorRef colorRef = nil;
+    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center);
     
-    for (IDLGradientLayerSegment *segment in segments) {
-        CGFloat sliverCount = segment.subdivisionCount;
-        if (sliverCount > 0.0f) {
-            
-            sliverWidth = segment.subdivisionWidth;
-            sliverStart = segment.startAngle;
-            
-            interpolate = segment.interpolateColors;
-            
-            colorRef = segment.startColorRef;
-            
-            if (interpolate) {
-                componentsCount = CGColorGetNumberOfComponents(colorRef);
-            } else {
-                componentsCount = 0;
-            }
-            CGFloat *components;
-            CGFloat componentDeltas[componentsCount];
-            
-            CGColorSpaceRef colorSpaceRef = CGColorGetColorSpace(colorRef);
-            
-            if (interpolate) {
-                components = (CGFloat *)CGColorGetComponents(colorRef);
-                CGFloat *finishComponents = (CGFloat *)CGColorGetComponents(segment.finishColorRef);
-                for (NSInteger c = 0; c < componentsCount; c++) {
-                    componentDeltas[c] = (finishComponents[c]-components[c])/sliverCount;
-                    //NSLog(@"c[%li]: %f, (%f > %f)",c,componentDeltas[c],components[c],finishComponents[c]);
-                }
-            } else {
-                components = nil;
-            }
-            
-            do {
-                counter++;
-                sliverFinish = MIN(sliverStart+sliverWidth, segment.finishAngle);
-                
-                if (counter % 3 == 0)
-                {
-                    
-                [self drawSliverInContext:gc start:sliverStart finish:sliverFinish radius:radius center:center colorRef:colorRef];
-                }
-                sliverStart = sliverFinish;
-                
-                if (interpolate) {
-                    CGColorRelease(colorRef);
-                    colorRef = nil;
-                    for (NSInteger c = 0; c < componentsCount; c++) {
-                        components[c] = components[c] + componentDeltas[c];
-                    }
-                    NSLog(@"%f, %f, %f",components[0],components[1],components[2]);
-                    colorRef = CGColorCreate(colorSpaceRef, components);
-                }
-                
-            } while (sliverStart < segment.finishAngle);
-            
-            
-        }
+}
+
+void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint center)
+{
+    NSUInteger segmentCount = segments.count;
+    IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
+    for (NSInteger i = 0; i < segmentCount; i++) {
+        segmentLookup[i] = [(IDLGradientLayerSegment *)[segments objectAtIndex:i] lookup];
+        NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
     }
     
-    NSLog(@"sliver count: %li",counter);
-    */
 }
 
 @end
