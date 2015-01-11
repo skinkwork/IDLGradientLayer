@@ -319,7 +319,7 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
     int segmentIndex = 0;
     
 #ifdef DEBUG
-    NSUInteger missCount = 0, hitCount = 0;
+    NSInteger missCount = 0, hitCount = 0;
 #endif
     
     int i = 0;
@@ -342,7 +342,8 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
                     if (segmentLookup[so].start <= angle && angle <= segmentLookup[so].finish) {
                         segmentIndex = so;
 #ifdef DEBUG
-                        hitCount++;
+                        // only record perfect hits
+                        if (s==0) hitCount++;
 #endif
                         break;
 #ifdef DEBUG
@@ -351,14 +352,11 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
 #endif
                     }
                 }
+            } else {
+                hitCount++;
             }
             
             CGFloat position = (angle - segmentLookup[segmentIndex].start)/segmentLookup[segmentIndex].delta;
-            
-            
-            if (abs(point.y) < 2) {
-                //NSLog(@"\tp:{%f,%f},\ta:%f (%f),\ti:%i",point.x,point.y,angle,position,lastSegmentIndex);
-            }
             
             IDLGradientLayerSegmentComponents components = segmentComponents[segmentIndex];
             
@@ -373,8 +371,9 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
     }
     
 #ifdef DEBUG
-    NSLog(@"hit count: %lu",hitCount);
-    NSLog(@"miss count: %lu",missCount);
+    NSLog(@"cached hit count: %li",hitCount);
+    NSLog(@"miss count: %li",missCount);
+    NSLog(@"score: %li",(hitCount-missCount));
 #endif
     
 }

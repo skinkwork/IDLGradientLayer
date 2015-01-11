@@ -64,7 +64,9 @@
                      (__bridge NSObject *)[UIColor colorWithWhite:0.5f alpha:1.0f].CGColor,
                      (__bridge NSObject *)[UIColor yellowColor].CGColor,
                      (__bridge NSObject *)[UIColor greenColor].CGColor,
-                     (__bridge NSObject *)[UIColor blueColor].CGColor];
+                     (__bridge NSObject *)[UIColor blueColor].CGColor,
+                     (__bridge NSObject *)[UIColor redColor].CGColor
+                     ];
     //layer.locations =  @[@(0.2f),@(0.5f),@(0.8f)];
     //layer.center = CGPointMake(100.0f, 100.0f);
     
