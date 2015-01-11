@@ -11,6 +11,8 @@
 
 @interface ViewController ()
 
+@property (nonatomic, weak) IDLGradientLayer *gradientLayer;
+
 @end
 
 @implementation ViewController
@@ -32,9 +34,20 @@
     [self drawGradient];
 }
 
+-(void)viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+    self.gradientLayer.frame = self.view.bounds;
+    //[self.gradientLayer setNeedsDisplay];
+}
+
 -(void)drawGradient
 {
-    IDLGradientLayer *layer = [IDLGradientLayer layer];
+    IDLGradientLayer *layer = self.gradientLayer;
+    if (layer == nil) {
+        layer = [IDLGradientLayer layer];
+        self.gradientLayer = layer;
+    }
     CGRect frame = self.view.bounds;
     /*/
     frame.size.width = 200;
@@ -43,7 +56,7 @@
     frame.origin.y = 100;
     //*/
     layer.frame = frame;
-    layer.rotation = 0.0f;//M_PI_2;
+    layer.rotation = 0.5f;//M_PI_2;
     layer.colors = @[
                      (__bridge NSObject *)[UIColor redColor].CGColor,
                      (__bridge NSObject *)[UIColor purpleColor].CGColor,
