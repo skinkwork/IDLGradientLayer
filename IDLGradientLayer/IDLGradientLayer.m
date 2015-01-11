@@ -11,6 +11,8 @@
 
 #import <UIKit/UIKit.h>
 
+#define M_TWOPI (2.0f * M_PI)
+
 typedef struct
 {
     CGFloat r;
@@ -188,8 +190,8 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
         
         segment = [IDLGradientLayerSegment new];
         segment.index = index;
-        segment.startAngle = location * M_PI * 2.0f;
-        segment.finishAngle = nextLocation * M_PI * 2.0f;
+        segment.startAngle = location * M_TWOPI;
+        segment.finishAngle = nextLocation * M_TWOPI;
         segment.startColorRef = color;
         segment.finishColorRef = nextColor;
         
@@ -252,27 +254,36 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     
     if (segmentCount == 0) return;
     
-    NSInteger counter = 0;
+    CGPoint center = self.center;
     
-    CGPoint center = CGPointZero;
+    // normalize the custom rotation
+    CGFloat rotation = _rotation;
+    //NSLog(@"supplied rotation: %f",rotation);
+    if (rotation < 0.0f || rotation > M_TWOPI) {
+        double intpart;
+        rotation = modf(rotation/M_TWOPI, &intpart) * M_TWOPI;
+        if (rotation < 0.0f) {
+            rotation += M_TWOPI;
+        }
+    }
+    //NSLog(@"normalized rotation: %f",rotation);
     
     CGContextClearRect(context, self.bounds);
     
-    BOOL interpolate;
-    
-    NSUInteger componentsCount;
-    
-    
+    // normalize the context frame
     CGRect contextFrame = CGContextGetClipBoundingBox(context);
-    
     NSLog(@"frame: %@",NSStringFromCGRect(contextFrame));
-    
+    contextFrame.size.width = ceil(CGRectGetMaxX(contextFrame)) - floor(CGRectGetMinX(contextFrame));
+    contextFrame.size.height = ceil(CGRectGetMaxY(contextFrame)) - floor(CGRectGetMinY(contextFrame));
+    contextFrame.origin.x = floor(contextFrame.origin.x);
+    contextFrame.origin.y = floor(contextFrame.origin.y);
+    NSLog(@"normalized frame: %@",NSStringFromCGRect(contextFrame));
     
     int dim = contextFrame.size.width * contextFrame.size.height;
     CFMutableDataRef bitmapData = CFDataCreateMutable(NULL, 0);
     CFDataSetLength(bitmapData, dim * 4);
     
-    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center);
+    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center, rotation);
     
     CGDataProviderRef dataProvider = CGDataProviderCreateWithCFData(bitmapData);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
@@ -280,7 +291,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     CGContextDrawImage(context, contextFrame, imageRef);
 }
 
-void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint center)
+void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint center, CGFloat rotation)
 {
     NSUInteger segmentCount = segments.count;
     IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
@@ -292,19 +303,24 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
         segmentLookup[i] = [segment lookup];
         segmentComponents[i] = [segment components];
         
-        NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
+        //NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
     }
     int offsetX = frame.origin.x;
     int offsetY = frame.origin.y;
     int width = frame.size.width;
     int height = frame.size.height;
     
-    float angle;
-    CGPoint position;
+    CGFloat angle;
+    CGPoint point;
     
-    int lastSegmentIndex = 0;
+    center.x = round(center.x);
+    center.y = round(center.y);
     
+    int segmentIndex = 0;
+    
+#ifdef DEBUG
     NSUInteger missCount = 0, hitCount = 0;
+#endif
     
     int i = 0;
     int s,so;
@@ -313,29 +329,38 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
     {
         for (int x = 0; x < width; x++)
         {
-            position.x = -(x + offsetX - center.x);
-            position.y = (y + offsetY - center.y);
-            if (position.x == 0.0f && position.y == 0.0f) {
-                angle = M_PI;
-            } else {
-                angle = atan2(position.y, position.x) + M_PI;
-            }
+            point.x = -(x + offsetX) + center.x;
+            point.y = (y + offsetY) + center.y;
             
-            for (s = 0; s < segmentCount; s++) {
-                so = (s + lastSegmentIndex) % segmentCount;
-                if (segmentLookup[so].start < angle && segmentLookup[so].finish > angle) {
-                    lastSegmentIndex = so;
-                    hitCount++;
-                    break;
-                } else {
-                    missCount++;
+            angle = atan2(point.y, point.x) + M_PI - rotation;
+            
+            if (angle < 0.0f) angle += M_PI * 2.0f;
+            
+            if (segmentCount > 1) {
+                for (s = 0; s < segmentCount; s++) {
+                    so = (s + segmentIndex) % segmentCount;
+                    if (segmentLookup[so].start <= angle && angle <= segmentLookup[so].finish) {
+                        segmentIndex = so;
+#ifdef DEBUG
+                        hitCount++;
+#endif
+                        break;
+#ifdef DEBUG
+                    } else {
+                        missCount++;
+#endif
+                    }
                 }
             }
-            //NSLog(@"p:{%f,%f}, a:%f, i:%i",position.x,position.y,angle,lastSegmentIndex);
             
-            float position = (angle - segmentLookup[lastSegmentIndex].start)/segmentLookup[lastSegmentIndex].delta;
+            CGFloat position = (angle - segmentLookup[segmentIndex].start)/segmentLookup[segmentIndex].delta;
             
-            IDLGradientLayerSegmentComponents components = segmentComponents[lastSegmentIndex];
+            
+            if (abs(point.y) < 2) {
+                //NSLog(@"\tp:{%f,%f},\ta:%f (%f),\ti:%i",point.x,point.y,angle,position,lastSegmentIndex);
+            }
+            
+            IDLGradientLayerSegmentComponents components = segmentComponents[segmentIndex];
             
             bitmap[i] =   (components.start.r + position * components.delta.r) * 0xff;
             bitmap[i+1] = (components.start.g + position * components.delta.g) * 0xff;
@@ -347,8 +372,10 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
         //NSLog(@" \t");
     }
     
+#ifdef DEBUG
     NSLog(@"hit count: %lu",hitCount);
     NSLog(@"miss count: %lu",missCount);
+#endif
     
 }
 

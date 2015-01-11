@@ -14,6 +14,6 @@
 @property(copy) NSArray *locations;
 @property CGPoint center;
 @property CGFloat radius;
-//@property CGFloat rotation;
+@property CGFloat rotation;
 
 @end
