@@ -19,16 +19,23 @@ typedef struct
     CGFloat a;
 } IDLGradientLayerColorComponents;
 
-NS_INLINE NSString *NSStringFromIDLGradientLayerColorComponents(IDLGradientLayerColorComponents components)
+typedef struct
 {
-    return [NSString stringWithFormat:@"{r:%f,g:%f,b:%f,a:%f}",components.r,components.g,components.b,components.a];
-}
+    IDLGradientLayerColorComponents start;
+    IDLGradientLayerColorComponents delta;
+} IDLGradientLayerSegmentComponents;
 
 typedef struct
 {
     CGFloat start;
     CGFloat finish;
+    CGFloat delta;
 } IDLGradientLayerSegmentLookup;
+
+NS_INLINE NSString *NSStringFromIDLGradientLayerColorComponents(IDLGradientLayerColorComponents components)
+{
+    return [NSString stringWithFormat:@"{r:%f,g:%f,b:%f,a:%f}",components.r,components.g,components.b,components.a];
+}
 
 NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSegmentLookup lookup)
 {
@@ -42,8 +49,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 @property CGFloat startAngle;
 @property CGFloat finishAngle;
 
-@property IDLGradientLayerColorComponents startColorComponents;
-@property IDLGradientLayerColorComponents finishColorComponents;
+@property IDLGradientLayerSegmentComponents components;
 @property IDLGradientLayerSegmentLookup lookup;
 
 @property BOOL interpolateColors;
@@ -56,7 +62,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 
 -(NSString *)description
 {
-    return [NSString stringWithFormat:@"Segment(%li)[start:%f, finish:%f, i:%i (%@ -> %@)]",self.index,self.startAngle,self.finishAngle, self.interpolateColors, NSStringFromIDLGradientLayerColorComponents(self.startColorComponents), NSStringFromIDLGradientLayerColorComponents(self.finishColorComponents)];
+    return [NSString stringWithFormat:@"Segment(%li)[start:%f, finish:%f, i:%i (%@ -> %@)]",self.index,self.startAngle,self.finishAngle, self.interpolateColors, NSStringFromIDLGradientLayerColorComponents(self.components.start), NSStringFromIDLGradientLayerColorComponents(self.components.delta)];
 }
 
 @end
@@ -182,8 +188,8 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
         
         segment = [IDLGradientLayerSegment new];
         segment.index = index;
-        segment.startAngle = location * M_PI * 2.0f + _rotation;
-        segment.finishAngle = nextLocation * M_PI * 2.0f + _rotation;
+        segment.startAngle = location * M_PI * 2.0f;
+        segment.finishAngle = nextLocation * M_PI * 2.0f;
         segment.startColorRef = color;
         segment.finishColorRef = nextColor;
         
@@ -192,9 +198,14 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
         
         segment.interpolateColors = !colorsMatch;
         
-        segment.startColorComponents = [self getComponentsFromColorRef:color];
-        segment.finishColorComponents = [self getComponentsFromColorRef:nextColor];
-        segment.lookup = (IDLGradientLayerSegmentLookup){segment.startAngle, segment.finishAngle};
+        IDLGradientLayerColorComponents startColorComponents = [self getComponentsFromColorRef:color];
+        IDLGradientLayerColorComponents finishColorComponents = [self getComponentsFromColorRef:nextColor];
+        finishColorComponents.r = finishColorComponents.r - startColorComponents.r;
+        finishColorComponents.g = finishColorComponents.g - startColorComponents.g;
+        finishColorComponents.b = finishColorComponents.b - startColorComponents.b;
+        finishColorComponents.a = finishColorComponents.a - startColorComponents.a;
+        segment.components = (IDLGradientLayerSegmentComponents){startColorComponents,finishColorComponents};
+        segment.lookup = (IDLGradientLayerSegmentLookup){segment.startAngle, segment.finishAngle, (segment.finishAngle - segment.startAngle)};
         
         //NSLog(@"number of components: %i", (int)CGColorGetNumberOfComponents(color));
     }
@@ -263,16 +274,81 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     
     generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center);
     
+    CGDataProviderRef dataProvider = CGDataProviderCreateWithCFData(bitmapData);
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGImageRef imageRef = CGImageCreate(contextFrame.size.width, contextFrame.size.height, 8, 32, contextFrame.size.width * 4, colorSpace, kCGImageAlphaLast, dataProvider, NULL, 0, kCGRenderingIntentDefault);
+    CGContextDrawImage(context, contextFrame, imageRef);
 }
 
 void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint center)
 {
     NSUInteger segmentCount = segments.count;
     IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
+    IDLGradientLayerSegmentComponents segmentComponents[segmentCount];
+    
+    IDLGradientLayerSegment *segment = nil;
     for (NSInteger i = 0; i < segmentCount; i++) {
-        segmentLookup[i] = [(IDLGradientLayerSegment *)[segments objectAtIndex:i] lookup];
+        segment = [segments objectAtIndex:i];
+        segmentLookup[i] = [segment lookup];
+        segmentComponents[i] = [segment components];
+        
         NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
     }
+    int offsetX = frame.origin.x;
+    int offsetY = frame.origin.y;
+    int width = frame.size.width;
+    int height = frame.size.height;
+    
+    float angle;
+    CGPoint position;
+    
+    int lastSegmentIndex = 0;
+    
+    NSUInteger missCount = 0, hitCount = 0;
+    
+    int i = 0;
+    int s,so;
+    
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            position.x = -(x + offsetX - center.x);
+            position.y = (y + offsetY - center.y);
+            if (position.x == 0.0f && position.y == 0.0f) {
+                angle = M_PI;
+            } else {
+                angle = atan2(position.y, position.x) + M_PI;
+            }
+            
+            for (s = 0; s < segmentCount; s++) {
+                so = (s + lastSegmentIndex) % segmentCount;
+                if (segmentLookup[so].start < angle && segmentLookup[so].finish > angle) {
+                    lastSegmentIndex = so;
+                    hitCount++;
+                    break;
+                } else {
+                    missCount++;
+                }
+            }
+            //NSLog(@"p:{%f,%f}, a:%f, i:%i",position.x,position.y,angle,lastSegmentIndex);
+            
+            float position = (angle - segmentLookup[lastSegmentIndex].start)/segmentLookup[lastSegmentIndex].delta;
+            
+            IDLGradientLayerSegmentComponents components = segmentComponents[lastSegmentIndex];
+            
+            bitmap[i] =   (components.start.r + position * components.delta.r) * 0xff;
+            bitmap[i+1] = (components.start.g + position * components.delta.g) * 0xff;
+            bitmap[i+2] = (components.start.b + position * components.delta.b) * 0xff;
+            bitmap[i+3] = (components.start.a + position * components.delta.a) * 0xff;
+            
+            i += 4;
+        }
+        //NSLog(@" \t");
+    }
+    
+    NSLog(@"hit count: %lu",hitCount);
+    NSLog(@"miss count: %lu",missCount);
     
 }
 
