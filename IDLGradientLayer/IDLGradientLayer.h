@@ -16,4 +16,7 @@
 @property CGFloat radius;
 @property CGFloat rotation;
 
+@property (nonatomic, strong) NSNumber *innerRadius;
+@property (nonatomic, strong) NSNumber *outerRadius;
+
 @end

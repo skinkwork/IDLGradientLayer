@@ -254,6 +254,12 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     
     if (segmentCount == 0) return;
     
+    CGFloat innerRadiusSquared = -1.0f;
+    CGFloat outerRadiusSquared = -1.0f;
+    if (self.innerRadius != nil) innerRadiusSquared = pow(self.innerRadius.floatValue, 2.0f);
+    if (self.outerRadius != nil) outerRadiusSquared = pow(self.outerRadius.floatValue, 2.0f);
+    if (outerRadiusSquared == 0.0f) return;
+    
     CGPoint center = self.center;
     
     // normalize the custom rotation
@@ -283,7 +289,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     CFMutableDataRef bitmapData = CFDataCreateMutable(NULL, 0);
     CFDataSetLength(bitmapData, dim * 4);
     
-    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center, rotation);
+    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center, rotation, innerRadiusSquared, outerRadiusSquared);
     
     CGDataProviderRef dataProvider = CGDataProviderCreateWithCFData(bitmapData);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
@@ -291,7 +297,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     CGContextDrawImage(context, contextFrame, imageRef);
 }
 
-void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint center, CGFloat rotation)
+void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint center, CGFloat rotation, CGFloat innerRadiusSquared, CGFloat outerRadiusSquared)
 {
     NSUInteger segmentCount = segments.count;
     IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
@@ -310,13 +316,18 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
     int width = frame.size.width;
     int height = frame.size.height;
     
-    CGFloat angle;
+    CGFloat angle, distanceSquared;
     CGPoint point;
     
     center.x = round(center.x);
     center.y = round(center.y);
     
     int segmentIndex = 0;
+    
+    BOOL measureInnerRadius = (innerRadiusSquared > 0.0f);
+    BOOL measureOuterRadius = (outerRadiusSquared > 0.0f);
+    
+    BOOL blankPixel;
     
 #ifdef DEBUG
     NSInteger missCount = 0, hitCount = 0;
@@ -329,42 +340,57 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
     {
         for (int x = 0; x < width; x++)
         {
-            point.x = -(x + offsetX) + center.x;
-            point.y = (y + offsetY) + center.y;
+            point.x = -(x + offsetX);
+            point.y = (y + offsetY);
             
-            angle = atan2(point.y, point.x) + M_PI - rotation;
+            blankPixel = NO;
             
-            if (angle < 0.0f) angle += M_PI * 2.0f;
-            
-            if (segmentCount > 1) {
-                for (s = 0; s < segmentCount; s++) {
-                    so = (s + segmentIndex) % segmentCount;
-                    if (segmentLookup[so].start <= angle && angle <= segmentLookup[so].finish) {
-                        segmentIndex = so;
-#ifdef DEBUG
-                        // only record perfect hits
-                        if (s==0) hitCount++;
-#endif
-                        break;
-#ifdef DEBUG
-                    } else {
-                        missCount++;
-#endif
-                    }
+            if (measureInnerRadius || measureOuterRadius) {
+                distanceSquared = pow(point.x, 2.0f) + pow(point.y, 2.0f);
+                if ((measureInnerRadius && distanceSquared < innerRadiusSquared) ||
+                    (measureOuterRadius && distanceSquared > outerRadiusSquared)) {
+                    blankPixel = YES;
                 }
-            } else {
-                hitCount++;
             }
-            
-            CGFloat position = (angle - segmentLookup[segmentIndex].start)/segmentLookup[segmentIndex].delta;
-            
-            IDLGradientLayerSegmentComponents components = segmentComponents[segmentIndex];
-            
-            bitmap[i] =   (components.start.r + position * components.delta.r) * 0xff;
-            bitmap[i+1] = (components.start.g + position * components.delta.g) * 0xff;
-            bitmap[i+2] = (components.start.b + position * components.delta.b) * 0xff;
-            bitmap[i+3] = (components.start.a + position * components.delta.a) * 0xff;
-            
+            if (!blankPixel) {
+                point.x = point.x + center.x;
+                point.y = point.y + center.y;
+                
+                angle = atan2(point.y, point.x) + M_PI - rotation;
+                
+                if (angle < 0.0f) angle += M_PI * 2.0f;
+                
+                if (segmentCount > 1) {
+                    for (s = 0; s < segmentCount; s++) {
+                        so = (s + segmentIndex) % segmentCount;
+                        if (segmentLookup[so].start <= angle && angle <= segmentLookup[so].finish) {
+                            segmentIndex = so;
+#ifdef DEBUG
+                            // only record perfect hits
+                            if (s==0) hitCount++;
+#endif
+                            break;
+#ifdef DEBUG
+                        } else {
+                            missCount++;
+#endif
+                        }
+                    }
+                } else {
+                    hitCount++;
+                }
+                
+                CGFloat position = (angle - segmentLookup[segmentIndex].start)/segmentLookup[segmentIndex].delta;
+                
+                IDLGradientLayerSegmentComponents components = segmentComponents[segmentIndex];
+                
+                bitmap[i] =   (components.start.r + position * components.delta.r) * 0xff;
+                bitmap[i+1] = (components.start.g + position * components.delta.g) * 0xff;
+                bitmap[i+2] = (components.start.b + position * components.delta.b) * 0xff;
+                bitmap[i+3] = (components.start.a + position * components.delta.a) * 0xff;
+            } else {
+                bitmap[i] = bitmap[i+1] = bitmap[i+2] = bitmap[i+3] = 0x0;
+            }
             i += 4;
         }
         //NSLog(@" \t");

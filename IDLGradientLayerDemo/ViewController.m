@@ -69,6 +69,8 @@
                      ];
     //layer.locations =  @[@(0.2f),@(0.5f),@(0.8f)];
     //layer.center = CGPointMake(100.0f, 100.0f);
+    layer.innerRadius = @(50.0f);
+    layer.outerRadius = @(100.0f);
     
     [self.view.layer addSublayer:layer];
     
