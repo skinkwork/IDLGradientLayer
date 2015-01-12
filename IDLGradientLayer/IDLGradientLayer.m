@@ -245,6 +245,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 
 - (void)drawGradientInContext:(CGContextRef)context
 {
+    self.contentsScale = 1.0f;
     
     NSArray *segments = [self buildSegments];
     
@@ -274,7 +275,6 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     }
     //NSLog(@"normalized rotation: %f",rotation);
     
-    CGContextClearRect(context, self.bounds);
     
     // normalize the context frame
     CGRect contextFrame = CGContextGetClipBoundingBox(context);
@@ -284,20 +284,28 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     contextFrame.origin.x = floor(contextFrame.origin.x);
     contextFrame.origin.y = floor(contextFrame.origin.y);
     NSLog(@"normalized frame: %@",NSStringFromCGRect(contextFrame));
+    CGContextClearRect(context, contextFrame);
     
-    int dim = contextFrame.size.width * contextFrame.size.height;
+    CGFloat scale = self.scale;
+    if (scale <= 0.0f) scale = 1.0f;
+    NSLog(@"scale: %f",scale);
+    
+    CGSize imageSize = CGSizeMake(ceil(contextFrame.size.width*scale), ceil(contextFrame.size.height*scale));
+    
+    int dim = imageSize.width * imageSize.height;
     CFMutableDataRef bitmapData = CFDataCreateMutable(NULL, 0);
     CFDataSetLength(bitmapData, dim * 4);
     
-    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center, rotation, innerRadiusSquared, outerRadiusSquared);
+    //generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center, rotation, innerRadiusSquared, outerRadiusSquared);
+    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, scale, imageSize, contextFrame.origin, center, rotation, innerRadiusSquared, outerRadiusSquared);
     
     CGDataProviderRef dataProvider = CGDataProviderCreateWithCFData(bitmapData);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGImageRef imageRef = CGImageCreate(contextFrame.size.width, contextFrame.size.height, 8, 32, contextFrame.size.width * 4, colorSpace, kCGImageAlphaLast, dataProvider, NULL, 0, kCGRenderingIntentDefault);
+    CGImageRef imageRef = CGImageCreate(imageSize.width, imageSize.height, 8, 32, imageSize.width * 4, colorSpace, kCGImageAlphaLast, dataProvider, NULL, 0, kCGRenderingIntentDefault);
     CGContextDrawImage(context, contextFrame, imageRef);
 }
 
-void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint center, CGFloat rotation, CGFloat innerRadiusSquared, CGFloat outerRadiusSquared)
+void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size, CGPoint offset, CGPoint center, CGFloat rotation, CGFloat innerRadiusSquared, CGFloat outerRadiusSquared)
 {
     NSUInteger segmentCount = segments.count;
     IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
@@ -311,10 +319,10 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
         
         //NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
     }
-    int offsetX = frame.origin.x;
-    int offsetY = frame.origin.y;
-    int width = frame.size.width;
-    int height = frame.size.height;
+    int offsetX = offset.x;
+    int offsetY = offset.y;
+    int width = size.width;
+    int height = size.height;
     
     CGFloat angle, distanceSquared;
     CGPoint point;
@@ -340,8 +348,8 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGRect frame, CGPoint cent
     {
         for (int x = 0; x < width; x++)
         {
-            point.x = -(x + offsetX);
-            point.y = (y + offsetY);
+            point.x = -(((CGFloat)x/scale) + offsetX);
+            point.y = (((CGFloat)y/scale) + offsetY);
             
             blankPixel = NO;
             

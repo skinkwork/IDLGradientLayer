@@ -55,6 +55,7 @@
     frame.origin.x = 100;
     frame.origin.y = 100;
     //*/
+    layer.scale = [UIScreen mainScreen].scale;
     layer.frame = frame;
     layer.rotation = 0.5f;//M_PI_2;
     layer.colors = @[

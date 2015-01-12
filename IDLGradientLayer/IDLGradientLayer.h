@@ -13,8 +13,8 @@
 @property(copy) NSArray *colors;
 @property(copy) NSArray *locations;
 @property CGPoint center;
-@property CGFloat radius;
 @property CGFloat rotation;
+@property CGFloat scale;
 
 @property (nonatomic, strong) NSNumber *innerRadius;
 @property (nonatomic, strong) NSNumber *outerRadius;
