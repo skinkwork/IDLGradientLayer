@@ -69,7 +69,7 @@
                      (__bridge NSObject *)[UIColor redColor].CGColor
                      ];
     //layer.locations =  @[@(0.2f),@(0.5f),@(0.8f)];
-    //layer.center = CGPointMake(100.0f, 100.0f);
+    layer.offset = CGPointMake(40.0f, 40.0f);
     layer.innerRadius = @(50.0f);
     layer.outerRadius = @(100.0f);
     

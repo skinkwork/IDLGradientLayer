@@ -11,6 +11,8 @@
 
 #import <UIKit/UIKit.h>
 
+#define IDL_GRADIENTLAYER_DEBUG     1
+
 #define M_TWOPI (2.0f * M_PI)
 
 typedef struct
@@ -102,22 +104,29 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     return self;
 }
 
+-(id)init
+{
+    self = [super init];
+    if (self) {
+        [self configure];
+    }
+    return self;
+}
+
+-(void)configure
+{
+    self.offset = CGPointZero;
+}
+
 - (BOOL)needsDisplayOnBoundsChange
 {
     return YES;
 }
 
-- (void)drawInContext:(CGContextRef)context
+-(void)updateLayer
 {
-    NSLog(@"frame: %@",NSStringFromCGRect(CGContextGetClipBoundingBox(context)));
-    [self moveOriginToCenterInContext:context];
-    [self drawGradientInContext:context];
-}
-
-- (void)moveOriginToCenterInContext:(CGContextRef)context
-{
-    CGRect bounds = self.bounds;
-    CGContextTranslateCTM(context, CGRectGetMidX(bounds), CGRectGetMidY(bounds));
+    CGImageRef imageRef = [self drawGradient];
+    self.contents = (__bridge id)imageRef;
 }
 
 - (NSArray *)buildSegments
@@ -247,33 +256,31 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 {
     CGFloat scale = _scale;
     if (scale <= 0.0f) scale = 1.0f;
-    NSLog(@"scale: %f",scale);
     return scale;
 }
 
-- (void)drawGradientInContext:(CGContextRef)context
+- (CGImageRef)drawGradient
 {
-    self.contentsScale = 1.0f;
-    
     NSArray *segments = [self buildSegments];
     
     NSUInteger segmentCount = segments.count;
     
+#ifdef IDL_GRADIENTLAYER_DEBUG
     NSLog(@"segments: \n%@",segments);
+#endif
     
-    if (segmentCount == 0) return;
+    if (segmentCount == 0) return nil;
     
     CGFloat innerRadiusSquared = -1.0f;
     CGFloat outerRadiusSquared = -1.0f;
     if (self.innerRadius != nil) innerRadiusSquared = pow(self.innerRadius.floatValue, 2.0f);
     if (self.outerRadius != nil) outerRadiusSquared = pow(self.outerRadius.floatValue, 2.0f);
-    if (outerRadiusSquared == 0.0f) return;
+    if (outerRadiusSquared == 0.0f) return nil;
     
-    CGPoint center = self.center;
+    CGPoint center;
     
     // normalize the custom rotation
     CGFloat rotation = _rotation;
-    //NSLog(@"supplied rotation: %f",rotation);
     if (rotation < 0.0f || rotation > M_TWOPI) {
         double intpart;
         rotation = modf(rotation/M_TWOPI, &intpart) * M_TWOPI;
@@ -281,40 +288,41 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
             rotation += M_TWOPI;
         }
     }
-    //NSLog(@"normalized rotation: %f",rotation);
     
-    
-    // normalize the context frame
-    CGRect contextFrame = CGContextGetClipBoundingBox(context);
-    NSLog(@"frame: %@",NSStringFromCGRect(contextFrame));
-    contextFrame.size.width = ceil(CGRectGetMaxX(contextFrame)) - floor(CGRectGetMinX(contextFrame));
-    contextFrame.size.height = ceil(CGRectGetMaxY(contextFrame)) - floor(CGRectGetMinY(contextFrame));
-    contextFrame.origin.x = floor(contextFrame.origin.x);
-    contextFrame.origin.y = floor(contextFrame.origin.y);
-    NSLog(@"normalized frame: %@",NSStringFromCGRect(contextFrame));
-    CGContextClearRect(context, contextFrame);
+    // bounds
+    CGRect bounds = self.bounds;
+    center.x = round(CGRectGetMidX(bounds) + self.offset.x);
+    center.y = round(CGRectGetMidY(bounds) + self.offset.y);
+    bounds.size.width = ceil(CGRectGetMaxX(bounds));
+    bounds.size.height = ceil(CGRectGetMaxY(bounds));
     
     CGFloat scale = self.scale;
-    if (scale <= 0.0f) scale = 1.0f;
-    NSLog(@"scale: %f",scale);
     
-    CGSize imageSize = CGSizeMake(ceil(contextFrame.size.width*scale), ceil(contextFrame.size.height*scale));
+    CGSize imageSize = CGSizeMake(ceil(bounds.size.width*scale), ceil(bounds.size.height*scale));
+    
     
     int dim = imageSize.width * imageSize.height;
     CFMutableDataRef bitmapData = CFDataCreateMutable(NULL, 0);
     CFDataSetLength(bitmapData, dim * 4);
     
-    //generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, contextFrame, center, rotation, innerRadiusSquared, outerRadiusSquared);
-    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, scale, imageSize, contextFrame.origin, center, rotation, innerRadiusSquared, outerRadiusSquared);
+#ifdef IDL_GRADIENTLAYER_DEBUG
+    NSLog(@"scale: %f",scale);
+    NSLog(@"size: %@",NSStringFromCGSize(imageSize));
+    NSLog(@"center: %@",NSStringFromCGPoint(center));
+#endif
+    
+    generateBitmap(CFDataGetMutableBytePtr(bitmapData), segments, scale, imageSize, center, rotation, innerRadiusSquared, outerRadiusSquared);
     
     CGDataProviderRef dataProvider = CGDataProviderCreateWithCFData(bitmapData);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     CGImageRef imageRef = CGImageCreate(imageSize.width, imageSize.height, 8, 32, imageSize.width * 4, colorSpace, kCGImageAlphaLast, dataProvider, NULL, 0, kCGRenderingIntentDefault);
-    CGContextDrawImage(context, contextFrame, imageRef);
+    
+    return imageRef;
 }
 
-void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size, CGPoint offset, CGPoint center, CGFloat rotation, CGFloat innerRadiusSquared, CGFloat outerRadiusSquared)
+void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size, CGPoint center, CGFloat rotation, CGFloat innerRadiusSquared, CGFloat outerRadiusSquared)
 {
+    
     NSUInteger segmentCount = segments.count;
     IDLGradientLayerSegmentLookup segmentLookup[segmentCount];
     IDLGradientLayerSegmentComponents segmentComponents[segmentCount];
@@ -324,19 +332,14 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
         segment = [segments objectAtIndex:i];
         segmentLookup[i] = [segment lookup];
         segmentComponents[i] = [segment components];
-        
-        //NSLog(@"%i: %@",i,NSStringFromIDLGradientLayerSegmentLookup(segmentLookup[i]));
     }
-    int offsetX = offset.x;
-    int offsetY = offset.y;
+    int centerX = round(center.x);
+    int centerY = round(center.y);
     int width = size.width;
     int height = size.height;
     
     CGFloat angle, distanceSquared;
     CGPoint point;
-    
-    center.x = round(center.x);
-    center.y = round(center.y);
     
     int segmentIndex = 0;
     
@@ -345,7 +348,7 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
     
     BOOL blankPixel;
     
-#ifdef DEBUG
+#ifdef IDL_GRADIENTLAYER_DEBUG
     NSInteger missCount = 0, hitCount = 0;
 #endif
     
@@ -356,8 +359,8 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
     {
         for (int x = 0; x < width; x++)
         {
-            point.x = -(((CGFloat)x/scale) + offsetX);
-            point.y = (((CGFloat)y/scale) + offsetY);
+            point.x = -(((CGFloat)x/scale) - centerX);
+            point.y = -(((CGFloat)y/scale) - centerY);
             
             blankPixel = NO;
             
@@ -369,8 +372,6 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
                 }
             }
             if (!blankPixel) {
-                point.x = point.x + center.x;
-                point.y = point.y + center.y;
                 
                 angle = atan2(point.y, point.x) + M_PI - rotation;
                 
@@ -381,12 +382,12 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
                         so = (s + segmentIndex) % segmentCount;
                         if (segmentLookup[so].start <= angle && angle <= segmentLookup[so].finish) {
                             segmentIndex = so;
-#ifdef DEBUG
+#ifdef IDL_GRADIENTLAYER_DEBUG
                             // only record perfect hits
                             if (s==0) hitCount++;
 #endif
                             break;
-#ifdef DEBUG
+#ifdef IDL_GRADIENTLAYER_DEBUG
                         } else {
                             missCount++;
 #endif
@@ -412,8 +413,8 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
         //NSLog(@" \t");
     }
     
-#ifdef DEBUG
-    NSLog(@"cached hit count: %li",hitCount);
+#ifdef IDL_GRADIENTLAYER_DEBUG
+    NSLog(@"hit count: %li",hitCount);
     NSLog(@"miss count: %li",missCount);
     NSLog(@"score: %li",(hitCount-missCount));
 #endif
