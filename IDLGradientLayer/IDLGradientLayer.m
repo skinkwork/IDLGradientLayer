@@ -243,6 +243,14 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     return components;
 }
 
+-(CGFloat)scale
+{
+    CGFloat scale = _scale;
+    if (scale <= 0.0f) scale = 1.0f;
+    NSLog(@"scale: %f",scale);
+    return scale;
+}
+
 - (void)drawGradientInContext:(CGContextRef)context
 {
     self.contentsScale = 1.0f;
