@@ -123,7 +123,18 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     return YES;
 }
 
--(void)updateLayer
+-(void)layoutSublayers
+{
+    [super layoutSublayers];
+    [self drawLayer];
+}
+
+-(void)forceLayerUpdate
+{
+    [self drawLayer];
+}
+
+-(void)drawLayer
 {
     CGImageRef imageRef = [self drawGradient];
     self.contents = (__bridge id)imageRef;
@@ -349,7 +360,7 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
     BOOL blankPixel;
     
 #ifdef IDL_GRADIENTLAYER_DEBUG
-    NSInteger missCount = 0, hitCount = 0;
+    NSInteger missCount = 0, hitCount = 0, blankCount = 0;
 #endif
     
     int i = 0;
@@ -383,14 +394,13 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
                         if (segmentLookup[so].start <= angle && angle <= segmentLookup[so].finish) {
                             segmentIndex = so;
 #ifdef IDL_GRADIENTLAYER_DEBUG
-                            // only record perfect hits
-                            if (s==0) hitCount++;
+                            if (s==0) {
+                                hitCount++;
+                            } else {
+                                missCount++;
+                            }
 #endif
                             break;
-#ifdef IDL_GRADIENTLAYER_DEBUG
-                        } else {
-                            missCount++;
-#endif
                         }
                     }
                 } else {
@@ -406,6 +416,9 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
                 bitmap[i+2] = (components.start.b + position * components.delta.b) * 0xff;
                 bitmap[i+3] = (components.start.a + position * components.delta.a) * 0xff;
             } else {
+#ifdef IDL_GRADIENTLAYER_DEBUG
+                blankCount++;
+#endif
                 bitmap[i] = bitmap[i+1] = bitmap[i+2] = bitmap[i+3] = 0x0;
             }
             i += 4;
@@ -414,9 +427,10 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
     }
     
 #ifdef IDL_GRADIENTLAYER_DEBUG
-    NSLog(@"hit count: %li",hitCount);
-    NSLog(@"miss count: %li",missCount);
-    NSLog(@"score: %li",(hitCount-missCount));
+    NSLog(@"hit:   %li",hitCount);
+    NSLog(@"miss:  %li",missCount);
+    NSLog(@"blank: %li",blankCount);
+    NSLog(@"total: %li",(hitCount+missCount+blankCount));
 #endif
     
 }

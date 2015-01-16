@@ -38,6 +38,7 @@
 {
     [super viewDidLayoutSubviews];
     self.gradientLayer.frame = self.view.bounds;
+    //[self.gradientLayer updateLayer];
     //[self.gradientLayer setNeedsDisplay];
 }
 
@@ -57,7 +58,7 @@
     //*/
     layer.scale = [UIScreen mainScreen].scale;
     layer.frame = frame;
-    layer.rotation = 0.5f;//M_PI_2;
+    layer.rotation = M_PI_2;
     layer.colors = @[
                      (__bridge NSObject *)[UIColor redColor].CGColor,
                      (__bridge NSObject *)[UIColor purpleColor].CGColor,
@@ -66,7 +67,7 @@
                      (__bridge NSObject *)[UIColor yellowColor].CGColor,
                      (__bridge NSObject *)[UIColor greenColor].CGColor,
                      (__bridge NSObject *)[UIColor blueColor].CGColor,
-                     (__bridge NSObject *)[UIColor redColor].CGColor
+                     //(__bridge NSObject *)[UIColor redColor].CGColor
                      ];
     //layer.locations =  @[@(0.2f),@(0.5f),@(0.8f)];
     layer.offset = CGPointMake(40.0f, 40.0f);

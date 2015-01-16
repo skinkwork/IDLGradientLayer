@@ -20,6 +20,6 @@
 @property (nonatomic, strong) NSNumber *innerRadius;
 @property (nonatomic, strong) NSNumber *outerRadius;
 
--(void)updateLayer;
+-(void)forceLayerUpdate;
 
 @end
