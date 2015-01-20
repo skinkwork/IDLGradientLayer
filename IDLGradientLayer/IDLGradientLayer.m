@@ -11,7 +11,7 @@
 
 #import <UIKit/UIKit.h>
 
-#define IDL_GRADIENTLAYER_DEBUG     1
+//#define IDL_GRADIENTLAYER_DEBUG     1
 
 #define M_TWOPI (2.0f * M_PI)
 
@@ -48,8 +48,6 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 
 @interface IDLGradientLayerSegment : NSObject
 
-@property CGColorRef startColorRef;
-@property CGColorRef finishColorRef;
 @property CGFloat startAngle;
 @property CGFloat finishAngle;
 
@@ -72,6 +70,8 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 @end
 
 @implementation IDLGradientLayer
+@dynamic offset;
+@dynamic rotation;
 
 + (NSSet *)customPropertyKeys
 {
@@ -91,7 +91,28 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 
 + (BOOL)needsDisplayForKey:(NSString *)key
 {
-    return [[self customPropertyKeys] containsObject:key] || [super needsDisplayForKey:key];
+    BOOL result = [[self customPropertyKeys] containsObject:key] || [super needsDisplayForKey:key];
+    //if (result) NSLog(@"needsDisplayForKey: %@ (%i)",key,result);
+    return result;
+}
+
+-(CABasicAnimation *)makeAnimationForKey:(NSString *)key
+{
+    CABasicAnimation *anim = [CABasicAnimation animationWithKeyPath:key];
+    anim.fromValue = [[self presentationLayer] valueForKey:key];
+    anim.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionDefault];
+    anim.duration = 1.0f;
+    return anim;
+}
+
+-(id<CAAction>)actionForKey:(NSString *)event
+{
+    if ([[[self class] customPropertyKeys] containsObject:event]) {
+        //NSLog(@"actionForKey: %@",event);
+        return [self makeAnimationForKey:event];
+    } else {
+        return [super actionForKey:event];
+    }
 }
 
 - (id)initWithLayer:(id)layer
@@ -108,14 +129,9 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
 {
     self = [super init];
     if (self) {
-        [self configure];
+        self.offset = CGPointZero;
     }
     return self;
-}
-
--(void)configure
-{
-    self.offset = CGPointZero;
 }
 
 - (BOOL)needsDisplayOnBoundsChange
@@ -123,21 +139,11 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     return YES;
 }
 
--(void)layoutSublayers
-{
-    [super layoutSublayers];
-    [self drawLayer];
-}
-
--(void)forceLayerUpdate
-{
-    [self drawLayer];
-}
-
--(void)drawLayer
+-(void)display
 {
     CGImageRef imageRef = [self drawGradient];
-    self.contents = (__bridge id)imageRef;
+    super.contents = (__bridge id)imageRef;
+    //NSLog(@"rotation: %f",[self.presentationLayer rotation]);
 }
 
 - (NSArray *)buildSegments
@@ -212,9 +218,6 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
         segment.index = index;
         segment.startAngle = location * M_TWOPI;
         segment.finishAngle = nextLocation * M_TWOPI;
-        segment.startColorRef = color;
-        segment.finishColorRef = nextColor;
-        
         
         //NSLog(@"index:%i - s:%f, f:%f", (int)index,location,nextLocation);
         
@@ -291,7 +294,7 @@ NS_INLINE NSString *NSStringFromIDLGradientLayerSegmentLookup(IDLGradientLayerSe
     CGPoint center;
     
     // normalize the custom rotation
-    CGFloat rotation = _rotation;
+    CGFloat rotation = [self.presentationLayer rotation];
     if (rotation < 0.0f || rotation > M_TWOPI) {
         double intpart;
         rotation = modf(rotation/M_TWOPI, &intpart) * M_TWOPI;
@@ -403,8 +406,10 @@ void generateBitmap(UInt8 *bitmap, NSArray *segments, CGFloat scale, CGSize size
                             break;
                         }
                     }
+#ifdef IDL_GRADIENTLAYER_DEBUG
                 } else {
-                    hitCount++;
+                    blankCount++;
+#endif
                 }
                 
                 CGFloat position = (angle - segmentLookup[segmentIndex].start)/segmentLookup[segmentIndex].delta;

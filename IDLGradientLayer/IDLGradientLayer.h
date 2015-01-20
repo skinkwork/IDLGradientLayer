@@ -13,13 +13,12 @@
 @property (copy) NSArray *colors;
 @property (copy) NSArray *locations;
 
-@property (nonatomic, assign) CGPoint offset;
-@property (nonatomic, assign) CGFloat rotation;
+@property CGPoint offset;
+@property CGFloat rotation;
+
 @property (nonatomic, assign) CGFloat scale;
 
 @property (nonatomic, strong) NSNumber *innerRadius;
 @property (nonatomic, strong) NSNumber *outerRadius;
-
--(void)forceLayerUpdate;
 
 @end

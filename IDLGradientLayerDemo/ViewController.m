@@ -32,6 +32,8 @@
     [super viewDidAppear:animated];
     
     [self drawGradient];
+    
+    [self performSelector:@selector(animateTest) withObject:nil afterDelay:4.0f];
 }
 
 -(void)viewDidLayoutSubviews
@@ -76,6 +78,12 @@
     
     [self.view.layer addSublayer:layer];
     
+}
+
+-(void)animateTest
+{
+    NSLog(@"animate test");
+    self.gradientLayer.rotation = 0.0f;
 }
 
 @end
